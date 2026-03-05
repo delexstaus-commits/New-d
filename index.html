@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="si">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SRT Sinhala Spoken Translator</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            color: #1c1e21;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .app-card {
+            background: #ffffff;
+            width: 90%;
+            max-width: 500px;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+        h2 { color: #1877f2; margin-bottom: 10px; }
+        .upload-section {
+            border: 2px dashed #bec3c9;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            cursor: pointer;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: 0.2s;
+        }
+        #processBtn { background-color: #1877f2; color: white; }
+        #processBtn:disabled { background-color: #e4e6eb; color: #bcc0c4; cursor: not-allowed; }
+        #downloadBtn { background-color: #42b72a; color: white; display: none; }
+        .progress-bar {
+            height: 8px;
+            width: 0%;
+            background: #1877f2;
+            border-radius: 4px;
+            transition: width 0.3s;
+        }
+        .progress-bg {
+            background: #e4e6eb;
+            border-radius: 4px;
+            margin: 15px 0;
+            display: none;
+        }
+        #status { font-size: 14px; color: #606770; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="app-card">
+    <h2>SRT සිංහල Translator</h2>
+    <p>English SRT එක කටවහරට හරවමු</p>
+
+    <div class="upload-section">
+        <input type="file" id="fileInput" accept=".srt" style="width: 100%;">
+    </div>
+
+    <div class="progress-bg" id="progBg">
+        <div class="progress-bar" id="progBar"></div>
+    </div>
+
+    <button id="processBtn">Translate කිරීම අරඹන්න</button>
+    <button id="downloadBtn">සිංහල SRT එක Download කරන්න</button>
+
+    <p id="status">Status: Ready</p>
+</div>
+
+<script>
+    const fileInput = document.getElementById('fileInput');
+    const processBtn = document.getElementById('processBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const status = document.getElementById('status');
+    const progBar = document.getElementById('progBar');
+    const progBg = document.getElementById('progBg');
+
+    let outputContent = "";
+
+    // කටවහර conversion logic
+    function convertToSpoken(text) {
+        const dictionary = [
+            { f: /ඔබ/g, s: "ඔයා" },
+            { f: /මම/g, s: "මං" },
+            { f: /පැමිණියා/g, s: "ආවා" },
+            { f: /සිටිනවා/g, s: "ඉන්නවා" },
+            { f: /තිබෙනවා/g, s: "තියෙනවා" },
+            { f: /ගියා/g, s: "ගියා" },
+            { f: /නැත/g, s: "නෑ" },
+            { f: /ඇය/g, s: "එයා" },
+            { f: /ඔහු/g, s: "එයා" },
+            { f: /සමග/g, s: "එක්ක" }
+        ];
+        let result = text;
+        dictionary.forEach(item => {
+            result = result.replace(item.f, item.s);
+        });
+        return result;
+    }
+
+    async function translateLine(text) {
+        if (!text.trim()) return "";
+        try {
+            const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=si&dt=t&q=${encodeURIComponent(text)}`);
+            const data = await res.json();
+            let rawTrans = data[0].map(x => x[0]).join('');
+            return convertToSpoken(rawTrans);
+        } catch (e) {
+            return text; // Error එකක් ආවොත් original line එක එවනවා
+        }
+    }
+
+    processBtn.onclick = async () => {
+        const file = fileInput.files[0];
+        if (!file) return alert("කරුණාකර File එකක් තෝරන්න!");
+
+        const text = await file.text();
+        const lines = text.split(/\r?\n/);
+        let resultArr = [];
+
+        processBtn.disabled = true;
+        progBg.style.display = 'block';
+        status.innerText = "Processing...";
+
+        for (let i = 0; i < lines.length; i++) {
+            let line = lines[i].trim();
+
+            // SRT timestamps සහ numbers ignore කරනවා
+            if (line === "" || /^\d+$/.test(line) || line.includes("-->")) {
+                resultArr.push(line);
+            } else {
+                let translated = await translateLine(line);
+                resultArr.push(translated);
+                // API එකට පොඩි විවේකයක්
+                await new Promise(r => setTimeout(r, 50));
+            }
+
+            let progress = ((i + 1) / lines.length) * 100;
+            progBar.style.width = progress + "%";
+            status.innerText = `පරිවර්තනය වෙමින්: ${Math.round(progress)}%`;
+        }
+
+        outputContent = resultArr.join('\r\n');
+        status.innerText = "සාර්ථකව අවසන් වුණා!";
+        downloadBtn.style.display = 'block';
+        processBtn.disabled = false;
+    };
+
+    downloadBtn.onclick = () => {
+        const blob = new Blob([outputContent], { type: 'text/srt' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = "Sinhala_Spoken.srt";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+    };
+</script>
+
+</body>
+</html>
